@@ -16,6 +16,22 @@ Food Memory es una aplicación Android nativa creada como proyecto de portfolio.
 - **Recomendaciones con IA opcional:** servicio Node.js que puede conectarse a Gemini. Envía un perfil agregado mínimo y conserva sugerencias locales cuando no hay servicio disponible.
 - **Internacionalización preparada:** recursos de interfaz en español e inglés y catálogos JSON en `translations/`.
 
+## Objetivo y alcance
+
+Food Memory resuelve un problema personal: después de visitar restaurantes, es fácil olvidar qué se pidió, cuánto gustó un plato y si merece la pena volver. La app convierte esas salidas en un historial consultable y utiliza las valoraciones explícitas para calcular un perfil gastronómico.
+
+El MVP se centra en tres recorridos: guardar una experiencia, consultar lugares próximos y ver ideas derivadas del propio historial. No incluye una red social, reservas, pedidos, pagos ni herramientas para gestionar restaurantes. El formulario de sesión es local y demostrativo; no existe un sistema de identidad remoto ni sincronización entre dispositivos.
+
+## Navegación y recorridos principales
+
+La navegación Compose está centralizada en `navigation/FoodMemoryNavigation.kt` y modela Inicio, Cerca, Perfil, captura de plato, formulario de experiencia y análisis de carta.
+
+1. **Inicio de sesión:** al abrirse, se lee la sesión local. Si existe, la navegación muestra Inicio; si no, presenta el formulario. Al iniciar sesión se solicita ubicación mientras se usa la app.
+2. **Guardar una salida:** el formulario prepara un `NewExperience`; `AddExperienceUseCase` delega la operación al repositorio Room, que inserta restaurante, experiencia, platos e ingredientes en una transacción. Room emite la lista actualizada a Inicio.
+3. **Añadir plato con foto:** CameraX captura la imagen en caché temporal, corrige su orientación y presenta el resultado para revisión. Al confirmar, el archivo se copia al almacenamiento privado de la app y su ruta se guarda con el plato. La navegación devuelve el plato al formulario mediante `SavedStateHandle`.
+4. **Consultar Cerca:** con permiso, `NearbyViewModel` recibe ubicación y busca bares/restaurantes mediante Overpass. MapLibre representa el mapa; los controles de categoría, búsqueda y ordenación filtran la lista. El orden alfabético usa colación `es-ES`, tratando vocales acentuadas como su letra base.
+5. **Ver el perfil:** el dominio calcula platos y restaurantes mejor valorados y gasto medio a partir de los registros locales. Si hay historial, se muestran sugerencias deterministas inmediatamente mientras el ViewModel solicita las sugerencias remotas.
+
 ## Arquitectura
 
 La aplicación utiliza una estructura por capas dentro de un único módulo Android (`:app`). La UI está construida con Jetpack Compose y sigue el patrón MVVM.
@@ -45,6 +61,112 @@ flowchart TD
 
 Las corrutinas y `Flow`/`StateFlow` mantienen las operaciones de disco y red fuera del hilo principal. Las interfaces del dominio permiten intercambiar implementaciones sin acoplar las pantallas a Room, HTTP o a un proveedor de IA.
 
+### Flujo de datos
+
+```mermaid
+sequenceDiagram
+    participant UI as Compose screen
+    participant VM as ViewModel
+    participant UC as Use case
+    participant Repo as Repository contract
+    participant Source as Local/remote data source
+    UI->>VM: acción del usuario
+    VM->>UC: invocación suspendible o colección
+    UC->>Repo: operación de dominio
+    Repo->>Source: Room, archivo o HTTP
+    Source-->>Repo: resultado
+    Repo-->>VM: modelo/Flow
+    VM-->>UI: StateFlow de estado renderizable
+```
+
+### Decisiones de implementación
+
+- **MVVM:** cada flujo de pantalla expone estado observable desde un `ViewModel`; Compose representa ese estado y envía eventos. Las pantallas recopilan estado con `collectAsStateWithLifecycle`.
+- **Clean Architecture ligera:** entidades/modelos de dominio y contratos no dependen de Compose, Room ni de Gemini. Los casos de uso nombran operaciones concretas y son puntos de prueba.
+- **Inyección de dependencias explícita:** `AppContainer` es el composition root que construye repositorios, casos de uso y fábricas de ViewModel. No se introduce un framework DI en esta demo pequeña.
+- **Persistencia transaccional:** Room agrupa el alta de restaurante, visita, platos e ingredientes con `withTransaction`; las consultas relacionales se transforman a modelos de dominio antes de llegar a UI. El esquema se versiona y la migración `1 → 2` añade descripción/foto e ingredientes.
+- **Separación de caché y almacenamiento permanente:** CameraX escribe primero en `cacheDir`; al confirmar, el repositorio copia la imagen a `filesDir/dish-photos` usando un archivo temporal y renombrado para evitar guardar una copia parcial.
+- **Estado de sesión de demo:** `PreferencesSessionRepository` persiste nombre/correo/id localmente en `SharedPreferences`. Esto mantiene la sesión entre aperturas, pero no autentica ni verifica al usuario en servidor.
+- **Errores y cancelación:** las operaciones remotas se representan como estados de carga, resultado o error; `ProfileViewModel` propaga `CancellationException` para no convertir cancelaciones de ciclo de vida en errores visibles y mantiene el fallback local ante fallos de red.
+
+### Modelo persistido
+
+```mermaid
+erDiagram
+    RESTAURANT ||--o{ FOOD_EXPERIENCE : recibe
+    FOOD_EXPERIENCE ||--o{ DISH : incluye
+    DISH ||--o{ INGREDIENT : describe
+    RESTAURANT {
+        long id PK
+        string name
+        string city
+    }
+    FOOD_EXPERIENCE {
+        long id PK
+        long restaurantId FK
+        string visitDate
+        long priceCents
+        double overallRating
+        string companions
+        string notes
+    }
+    DISH {
+        long id PK
+        long experienceId FK
+        string name
+        double rating
+        string description
+        string photoPath
+    }
+    INGREDIENT {
+        long id PK
+        long dishId FK
+        string name
+        string evidence
+    }
+```
+
+El precio se conserva en céntimos (`priceCents`) para evitar errores de redondeo propios de `Float`/`Double`. La base local se llama `food-memory.db`; Room exporta sus esquemas a `app/schemas/`.
+
+### Sincronía y asincronía
+
+- La UI y la navegación ejecutan en el hilo principal; no hacen directamente operaciones de disco ni llamadas de red.
+- Las operaciones suspendibles de sesión, fotos, Overpass y HTTP se mueven a `Dispatchers.IO` o a ejecutores de CameraX.
+- Room expone cambios como `Flow`; los ViewModels los combinan y publican como `StateFlow` para mantener Inicio/Perfil actualizados tras un guardado.
+- Los eventos discretos (por ejemplo, guardar una experiencia) se lanzan desde `viewModelScope`; tareas continuas se cancelan con el ciclo de vida del ViewModel.
+- Las llamadas a servicios externos tienen timeout y errores traducidos a estados recuperables cuando corresponde. Los servicios públicos de mapa siguen sujetos a disponibilidad y límites de terceros.
+
+## Cámara y análisis de imágenes
+
+La pantalla `DishCaptureScreen` integra CameraX Preview e ImageCapture. La captura prioriza latencia, impide dobles pulsaciones mientras escribe, establece la rotación actual, normaliza orientación EXIF y ofrece la imagen capturada para revisar/editar nombre, descripción e ingredientes.
+
+La interfaz y los contratos de análisis (`DishAnalysisRepository`, `AnalyzeDishPhotoUseCase`) están preparados para reemplazar la fuente demo. **La configuración activa en `AppContainer` es `DemoDishAnalysisRepository`**, por lo que no se debe presentar la detección de plato/ingredientes como una llamada real de IA en la versión actual. Existe un adaptador HTTP como base de integración, pero no está conectado al flujo activo de captura.
+
+## Mapa y búsqueda de lugares
+
+- La ubicación se pide en contexto, al iniciar sesión, con permiso de primer plano; no se solicita ubicación en segundo plano.
+- `NearbyViewModel` coordina permisos, ubicación actual/reciente, frecuencia de búsqueda, estados de carga y reintentos al abrir la pantalla.
+- El cliente consulta Overpass API (datos de OpenStreetMap) en paralelo contra endpoints públicos y utiliza el primer resultado satisfactorio. Hay caché en memoria por zona; no es un proveedor comercial ni garantiza disponibilidad.
+- MapLibre dibuja el estilo Liberty de OpenFreeMap y los marcadores; el mapa se precalienta detrás de Inicio cuando ya existe ubicación para reducir la espera visual al entrar en Cerca.
+- Una caída de red, falta de permiso, GPS desactivado o límites del endpoint puede dejar temporalmente la lista vacía. La UI comunica esos estados y permite reintentar.
+- El filtro/buscador/orden de la lista no modifica los datos de OpenStreetMap. El orden por nombre se localiza con `Collator` español; la distancia se recalcula al recibir una posición nueva.
+
+## Perfil e IA
+
+El perfil personal es determinista y basado en historial: el caso de uso selecciona platos y restaurantes con valoración ≥ 4/5, limita los destacados a tres y calcula el gasto medio con experiencias que tengan precio. Con historial vacío no se infieren gustos.
+
+La integración remota de recomendaciones es opcional:
+
+1. `ProfileViewModel` observa los cambios de Room y construye `TasteProfile`.
+2. `DemoTasteRecommendationRepository` presenta una alternativa local rápida y reproducible.
+3. `HttpTasteRecommendationRepository` puede enviar al backend solo nombres y puntuaciones agregados de favoritos y lugares a repetir.
+4. El servidor Node.js valida los datos, llama a Gemini con una salida estructurada y filtra restaurantes para no sugerir lugares ajenos al historial.
+5. Si falta red, clave o hay una respuesta inválida, la app conserva las sugerencias locales.
+
+La clave `GEMINI_API_KEY` reside en `backend/.env`, excluido por Git. No se incluye en el APK. El backend no almacena fotos ni solicitudes. Aun así, cualquier despliegue real necesitaría autenticación, HTTPS, cuotas y revisión de privacidad/retención del proveedor.
+
+Diseño detallado: [`docs/AI_RECOMMENDATIONS.md`](docs/AI_RECOMMENDATIONS.md).
+
 ## Stack técnico
 
 - Kotlin y Android SDK
@@ -59,34 +181,37 @@ Las corrutinas y `Flow`/`StateFlow` mantienen las operaciones de disco y red fue
 - Gemini como proveedor remoto opcional
 - Gradle Kotlin DSL y catálogo centralizado de dependencias
 
-## Flujo de recomendaciones con IA
+## Organización del código
 
-La IA remota es opcional y está desacoplada mediante `TasteRecommendationRepository`. El perfil deriva primero de los datos locales; si se configura el backend, la app envía nombres y puntuaciones agregadas de platos y restaurantes bien valorados. El servidor genera y valida una respuesta estructurada. La UI conserva recomendaciones locales basadas en valoraciones cuando el backend no responde.
-
-La captura y análisis de una imagen de plato usa actualmente `DemoDishAnalysisRepository`: es un punto de sustitución arquitectónico, no un análisis remoto real habilitado en la app actual. La demo evita incluir claves de proveedor en el APK. No se deben añadir secretos a este repositorio.
-
-Detalles: [`docs/AI_RECOMMENDATIONS.md`](docs/AI_RECOMMENDATIONS.md).
-
-## Ejecutar el proyecto
-
-1. Clona el repositorio y ábrelo en Android Studio.
-2. Usa JDK 11 o la versión requerida por el Gradle Wrapper del proyecto y sincroniza Gradle.
-3. Ejecuta la configuración `app` en un emulador o dispositivo Android. El `minSdk` actual es 24.
-4. Para lugares cercanos, concede permiso de ubicación mientras usas la app y habilita la ubicación del emulador/dispositivo.
-
-La app compila sin credenciales de IA. El endpoint de desarrollo por defecto apunta al emulador (`http://10.0.2.2:8080/`); las recomendaciones remotas permanecen opcionales.
-
-### Backend opcional de IA
-
-Requiere Node.js 18 o superior y una clave de Gemini. Desde la raíz del proyecto:
-
-```sh
-cp backend/.env.example backend/.env
-# Añade GEMINI_API_KEY en backend/.env
-node backend/server.mjs
+```text
+app/src/main/java/com/example/foodmemory/
+├── app/                 # aplicación, composition root y scaffold
+├── data/
+│   ├── demo/            # fuentes reproducibles de demostración
+│   ├── local/           # Room, DAO, entidades, sesión y fotos
+│   ├── remote/          # adaptadores HTTP y Overpass
+│   └── repository/      # implementación Room de contratos de dominio
+├── domain/
+│   ├── model/           # modelos de negocio
+│   ├── repository/      # interfaces de acceso a datos
+│   └── usecase/         # operaciones y reglas de negocio
+├── feature/             # pantallas y ViewModels por área funcional
+├── navigation/          # destinos, rutas y resultados entre pantallas
+└── ui/theme/            # colores, tipografía, tokens y tema Compose
 ```
 
-`backend/.env` está excluido de Git. Para un despliegue fuera del emulador, configura una URL HTTPS mediante la propiedad Gradle `foodMemoryApiBaseUrl`; no publiques un servidor de demo sin revisar autenticación, cuotas, límites de uso y privacidad.
+El proyecto mantiene un solo módulo Gradle (`:app`) a propósito: las capas se separan por responsabilidad y paquetes, mientras la demo evita módulos Gradle adicionales que no aportarían una frontera funcional real en su alcance actual.
+
+### Convenciones para seguir desarrollando
+
+- Añadir texto de interfaz a `strings.xml`/`values-en/strings.xml`, no escribir copy visible directamente en las pantallas.
+- Mantener paleta, tipografía, espaciados, tamaños y esquinas compartidos en `ui/theme/`.
+- Las pantallas emiten eventos; la lógica y la coordinación asíncrona viven en ViewModels/casos de uso.
+- Mantener acceso a red y almacenamiento detrás de repositorios; no filtrar DTOs/entidades de infraestructura a Compose.
+- Validar y revisar cualquier dato de IA antes de convertirlo en datos persistidos o preferencia real del usuario.
+- Añadir migraciones Room explícitas y actualizar esquemas exportados cuando cambie el modelo persistido.
+
+Tokens visuales actuales: [`docs/DESIGN_TOKENS.md`](docs/DESIGN_TOKENS.md). Los catálogos fuente para idiomas: [`translations/en.json`](translations/en.json) y [`translations/es.json`](translations/es.json).
 
 ## Datos y privacidad
 
@@ -101,11 +226,22 @@ Consulta también [`backend/README.md`](backend/README.md) para conocer el flujo
 
 ## Calidad y pruebas
 
-Pruebas unitarias e instrumentadas viven en `app/src/test/` y `app/src/androidTest/`. Incluyen, entre otros, ordenación española con tildes y persistencia del repositorio Room. Para ejecutarlas localmente:
+Pruebas unitarias e instrumentadas viven en `app/src/test/` y `app/src/androidTest/`.
+
+| Prueba | Tipo | Qué protege |
+| --- | --- | --- |
+| `RestaurantSortingTest` | Unit test JVM | Vocales con tilde ordenadas con su letra base en español, ascendente/descendente |
+| `RoomExperienceRepositoryTest` | Android instrumentation | Relaciones de experiencia tras cerrar/reabrir Room y copia completa de foto al almacenamiento privado |
+
+Ejecución desde la raíz del repositorio:
 
 ```sh
 ./gradlew :app:testDebugUnitTest :app:assembleDebug
+# En un emulador/dispositivo con Android Test Orchestrator no requerido:
+./gradlew :app:connectedDebugAndroidTest
 ```
+
+Gradle puede necesitar descargar dependencias en la primera ejecución. Los tests instrumentados requieren un emulador o dispositivo conectado; los unit tests JVM no.
 
 ## Estructura del repositorio
 
@@ -116,9 +252,39 @@ docs/            Decisiones de arquitectura y tokens de diseño
 translations/    Catálogos JSON en inglés y español
 ```
 
-## Estado y próximos pasos
+## Ejecutar el proyecto
 
-Food Memory es una demo técnica: ubicación y consulta de lugares necesitan red; las recomendaciones Gemini necesitan configurar y desplegar el backend; el análisis de la foto está sustituido por una implementación demo. Antes de una publicación en tienda habría que completar revisión de privacidad, accesibilidad, identidad de paquete, firma de release, configuración HTTPS de producción, ficha y política de privacidad, y pruebas en dispositivos físicos.
+### Android
+
+1. Clona el repositorio y ábrelo en Android Studio.
+2. Deja que el IDE sincronice Gradle e instale el Android SDK requerido por `compileSdk`; utiliza el JDK que configura el Gradle Wrapper/Android Studio.
+3. Selecciona la configuración `app` y ejecuta en un dispositivo/emulador compatible (Android 7.0/API 24 o posterior).
+4. Para probar fotos, concede permiso de cámara. Para Cerca, concede ubicación mientras se usa la app y configura una posición en el emulador.
+
+La app no requiere credenciales para compilar o probar sus recorridos locales. `local.properties` se genera para cada máquina y está excluido de Git. El endpoint Android de desarrollo por defecto es `http://10.0.2.2:8080/`, la dirección del host vista desde el emulador.
+
+### Backend opcional de IA
+
+Requiere Node.js 18+ y una clave de Gemini. Desde la raíz del proyecto:
+
+```sh
+cp backend/.env.example backend/.env
+# Añade GEMINI_API_KEY en backend/.env; no la incluyas en Git.
+node backend/server.mjs
+```
+
+Comprueba disponibilidad con `GET /health`. Para utilizar un backend desplegado fuera del emulador, configura `foodMemoryApiBaseUrl` como propiedad Gradle y usa HTTPS. La ruta local en HTTP solo sirve para desarrollo del emulador. `backend/.env` está excluido de Git. No despliegues este servidor de demo sin autenticación, controles de uso y revisión de privacidad.
+
+Detalles operativos: [`backend/README.md`](backend/README.md).
+
+## Limitaciones conocidas y preparación para release
+
+- La sesión es una identidad local de muestra, no autenticación segura ni sincronización de cuenta.
+- El análisis de imagen está en modo demo en el composition root actual. Las recomendaciones remotas requieren backend desplegado y clave Gemini configurada solo en servidor.
+- La búsqueda cercana depende de ubicación concedida, red y servicios públicos de Overpass/OpenStreetMap.
+- No se ha publicado una versión en Play Store ni se ofrece un APK de release firmado en este repositorio.
+- El package/application id sigue siendo `com.example.foodmemory`, adecuado para demo pero pendiente de reemplazo antes de una publicación formal.
+- Antes de release: definir identidad de paquete y firma/keystore seguros, desplegar API HTTPS con controles de uso, revisar privacidad/retención, accesibilidad, permisos, clasificación de contenido y política de privacidad, y validar en dispositivos físicos. Nunca subir claves o keystores al repositorio.
 
 ## Desarrollo asistido por IA
 
