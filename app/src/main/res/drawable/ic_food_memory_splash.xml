@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Camera body, with a plate-shaped lens and simple food details. -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M24,35h13l5,-7h24l5,7h13c4.4,0 8,3.6 8,8v27c0,4.4 -3.6,8 -8,8H24c-4.4,0 -8,-3.6 -8,-8V43c0,-4.4 3.6,-8 8,-8z" />
+    <path android:fillColor="#244A3D" android:pathData="M54,39a17,17 0,1 0,0 34a17,17 0,1 0,0 -34M54,44a12,12 0,1 1,0 24a12,12 0,1 1,0 -24" />
+    <path android:fillColor="#D96C4A" android:pathData="M54,48a8,8 0,1 0,0 16a8,8 0,1 0,0 -16" />
+    <path android:fillColor="#244A3D" android:pathData="M76,42a3,3 0,1 0,0 6a3,3 0,1 0,0 -6" />
+    <!-- Fork silhouette beside the camera suggests food photography. -->
+    <path android:fillColor="#D96C4A" android:pathData="M29,46h2v7h2v-7h2v7h2v-7h2v8c0,3 -2,5 -4,6v11h-4V60c-2,-1 -4,-3 -4,-6v-8z" />
+</vector>

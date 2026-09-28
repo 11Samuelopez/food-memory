@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.FoodMemory" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">#FFFFFF</item>
+        <item name="android:navigationBarColor">#FFFFFF</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+    <style name="Theme.FoodMemory.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#FFFFFF</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_food_memory_splash</item>
+        <item name="postSplashScreenTheme">@style/Theme.FoodMemory</item>
+    </style>
+</resources>

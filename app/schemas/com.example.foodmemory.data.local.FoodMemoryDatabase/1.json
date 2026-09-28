@@ -1,0 +1,199 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "94a5da4db87605b7403f74db968d3941",
+    "entities": [
+      {
+        "tableName": "restaurants",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `city` TEXT NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "city",
+            "columnName": "city",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_restaurants_name_city",
+            "unique": true,
+            "columnNames": [
+              "name",
+              "city"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_restaurants_name_city` ON `${TABLE_NAME}` (`name`, `city`)"
+          }
+        ]
+      },
+      {
+        "tableName": "food_experiences",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `restaurantId` INTEGER NOT NULL, `visitDate` TEXT NOT NULL, `priceCents` INTEGER, `overallRating` REAL, `companions` TEXT NOT NULL, `notes` TEXT NOT NULL, FOREIGN KEY(`restaurantId`) REFERENCES `restaurants`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "restaurantId",
+            "columnName": "restaurantId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "visitDate",
+            "columnName": "visitDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "priceCents",
+            "columnName": "priceCents",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "overallRating",
+            "columnName": "overallRating",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "companions",
+            "columnName": "companions",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notes",
+            "columnName": "notes",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_food_experiences_restaurantId",
+            "unique": false,
+            "columnNames": [
+              "restaurantId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_food_experiences_restaurantId` ON `${TABLE_NAME}` (`restaurantId`)"
+          },
+          {
+            "name": "index_food_experiences_visitDate",
+            "unique": false,
+            "columnNames": [
+              "visitDate"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_food_experiences_visitDate` ON `${TABLE_NAME}` (`visitDate`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "restaurants",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "restaurantId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "dishes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `experienceId` INTEGER NOT NULL, `name` TEXT NOT NULL, `rating` REAL, FOREIGN KEY(`experienceId`) REFERENCES `food_experiences`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "experienceId",
+            "columnName": "experienceId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rating",
+            "columnName": "rating",
+            "affinity": "REAL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_dishes_experienceId",
+            "unique": false,
+            "columnNames": [
+              "experienceId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dishes_experienceId` ON `${TABLE_NAME}` (`experienceId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "food_experiences",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "experienceId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '94a5da4db87605b7403f74db968d3941')"
+    ]
+  }
+}

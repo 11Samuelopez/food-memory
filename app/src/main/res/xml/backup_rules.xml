@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Private local demo data stays on this device. -->
+    <exclude domain="database" path="." />
+    <exclude domain="sharedpref" path="food_memory_session.xml" />
+    <exclude domain="file" path="dish-photos/" />
+</full-backup-content>
